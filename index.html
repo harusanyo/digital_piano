@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>シンプル音階プレーヤー</title>
+    <style>
+        .container {
+            text-align: center;
+            margin: 20px;
+        }
+        .piano {
+            display: inline-flex;
+            position: relative;
+            margin: 50px;
+        }
+        .white-key {
+            width: 60px;
+            height: 200px;
+            border: 1px solid black;
+            margin: 2px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 10px;
+            background-color: white;
+            cursor: pointer;
+            position: relative;
+            z-index: 1;
+        }
+        .white-key:active, .white-key.active {
+            background-color: pink;
+            transition: background-color 0.1s;
+        }
+        .black-key {
+            width: 40px;
+            height: 120px;
+            background-color: black;
+            position: absolute;
+            cursor: pointer;
+            z-index: 2;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 10px;
+            color: white;
+        }
+        .black-key:active, .black-key.active {
+            background-color: #ff69b4;  /* ホットピンク */
+            transition: background-color 0.1s;
+        }
+        .controls {
+            margin: 20px;
+        }
+        .recording {
+            color: red;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <select id="waveform">
+                <option value="sine">サイン波</option>
+                <option value="square">矩形波</option>
+                <option value="sawtooth">のこぎり波</option>
+                <option value="triangle">三角波</option>
+            </select>
+            <input type="range" id="volume" min="0" max="100" value="50">
+            <button id="recordButton">録音開始</button>
+            <button id="playRecord" disabled>録音再生</button>
+            <span class="recording" id="recordingStatus">録音中...</span>
+            <select id="songSelect">
+                <option value="">曲を選択してください</option>
+                <option value="twinkle">きらきら星</option>
+                <option value="doremi">ドミの歌</option>
+                <option value="ode">喜びの歌</option>
+                <option value="lemon">Lemon</option>
+                <option value="yume">夢をかなえてドラえもん</option>
+                <option value="ue">上を向いて歩こう</option>
+                <option value="influencer">インフルエンサー</option>
+            </select>
+            <button id="playButton">自動演奏</button>
+        </div>
+        
+        <div class="piano">
+            <div class="white-key" data-note="C4">ド</div>
+            <div class="black-key" style="left: 40px;" data-note="C#4">ド#</div>
+            <div class="white-key" data-note="D4">レ</div>
+            <div class="black-key" style="left: 100px;" data-note="D#4">レ#</div>
+            <div class="white-key" data-note="E4">ミ</div>
+            <div class="white-key" data-note="F4">ファ</div>
+            <div class="black-key" style="left: 220px;" data-note="F#4">ファ#</div>
+            <div class="white-key" data-note="G4">ソ</div>
+            <div class="black-key" style="left: 280px;" data-note="G#4">ソ#</div>
+            <div class="white-key" data-note="A4">ラ</div>
+            <div class="black-key" style="left: 340px;" data-note="A#4">ラ#</div>
+            <div class="white-key" data-note="B4">シ</div>
+            <div class="white-key" data-note="C5">ド</div>
+        </div>
+    </div>
+
+    <script>
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let isRecording = false;
+        let recordedNotes = [];
+        let recordStartTime;
+
+        const noteFrequencies = {
+            'C4': 261.63, 'C#4': 277.18,
+            'D4': 293.66, 'D#4': 311.13,
+            'E4': 329.63,
+            'F4': 349.23, 'F#4': 369.99,
+            'G4': 392.00, 'G#4': 415.30,
+            'A4': 440.00, 'A#4': 466.16,
+            'B4': 493.88,
+            'C5': 523.25
+        };
+
+        const keyMap = {
+            'a': 'C4', 'w': 'C#4',
+            's': 'D4', 'e': 'D#4',
+            'd': 'E4',
+            'f': 'F4', 't': 'F#4',
+            'g': 'G4', 'y': 'G#4',
+            'h': 'A4', 'u': 'A#4',
+            'j': 'B4',
+            'k': 'C5'
+        };
+
+        function playNote(frequency, duration = 0.5) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.type = document.getElementById('waveform').value;
+            oscillator.frequency.value = frequency;
+            
+            const volume = document.getElementById('volume').value / 100;
+            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+
+            if (isRecording) {
+                recordedNotes.push({
+                    frequency,
+                    time: audioContext.currentTime - recordStartTime,
+                    duration,
+                    volume,
+                    type: oscillator.type
+                });
+            }
+        }
+
+        document.querySelectorAll('.white-key, .black-key').forEach(key => {
+            key.addEventListener('mousedown', () => {
+                const note = key.dataset.note;
+                playNote(noteFrequencies[note]);
+                key.classList.add('active');
+            });
+            key.addEventListener('mouseup', () => {
+                key.classList.remove('active');
+            });
+            key.addEventListener('mouseleave', () => {
+                key.classList.remove('active');
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.repeat) return;
+            const note = keyMap[event.key];
+            if (note) {
+                playNote(noteFrequencies[note]);
+                const key = document.querySelector(`[data-note="${note}"]`);
+                key.classList.add('active');
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            const note = keyMap[event.key];
+            if (note) {
+                const key = document.querySelector(`[data-note="${note}"]`);
+                key.classList.remove('active');
+            }
+        });
+
+        // 録音機能
+        document.getElementById('recordButton').addEventListener('click', function() {
+            if (!isRecording) {
+                isRecording = true;
+                recordedNotes = [];
+                recordStartTime = audioContext.currentTime;
+                this.textContent = '録音停止';
+                document.getElementById('recordingStatus').style.display = 'inline';
+                document.getElementById('playRecord').disabled = true;
+            } else {
+                isRecording = false;
+                this.textContent = '録音開始';
+                document.getElementById('recordingStatus').style.display = 'none';
+                document.getElementById('playRecord').disabled = false;
+            }
+        });
+
+        document.getElementById('playRecord').addEventListener('click', function() {
+            const startTime = audioContext.currentTime;
+            recordedNotes.forEach(note => {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = note.type;
+                oscillator.frequency.value = note.frequency;
+                
+                gainNode.gain.setValueAtTime(note.volume, startTime + note.time);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + note.time + note.duration);
+                
+                oscillator.start(startTime + note.time);
+                oscillator.stop(startTime + note.time + note.duration);
+            });
+        });
+
+        // 曲のデータ
+        const songs = {
+            twinkle: [
+                { note: 'C4', duration: 0.5 },
+                { note: 'C4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 1 },
+                { note: 'F4', duration: 0.5 },
+                { note: 'F4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'C4', duration: 1 }
+            ],
+            doremi: [
+                { note: 'C4', duration: 0.5, text: 'ド' },
+                { note: 'D4', duration: 0.5, text: 'レ' },
+                { note: 'E4', duration: 0.5, text: 'ミ' },
+                { note: 'F4', duration: 0.5, text: 'ファ' },
+                { note: 'G4', duration: 0.5, text: 'ソ' },
+                { note: 'A4', duration: 0.5, text: 'ラ' },
+                { note: 'B4', duration: 0.5, text: 'シ' },
+                { note: 'C5', duration: 0.5, text: 'ド' }
+            ],
+            ode: [
+                { note: 'E4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'F4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'F4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'C4', duration: 0.5 },
+                { note: 'C4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'E4', duration: 0.75 },
+                { note: 'D4', duration: 0.25 },
+                { note: 'D4', duration: 1 }
+            ],
+            lemon: [
+                // Lemon (米���玄師)
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 1 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 1 },
+                { note: 'C4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 1 }
+            ],
+            yume: [
+                // 夢をかなえてドラえもん
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.25 },
+                { note: 'G4', duration: 0.25 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.25 },
+                { note: 'G4', duration: 0.25 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'C4', duration: 1 }
+            ],
+            ue: [
+                // 上を向いて歩こう
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 1 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                { note: 'D4', duration: 1 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 }
+            ],
+            influencer: [
+                // イントロ
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'B4', duration: 0.5 },
+                
+                // Aメロ
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 1 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 1 },
+                
+                // Bメロ
+                { note: 'B4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 1 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                
+                // サビ前
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'B4', duration: 1 },
+                
+                // サビ
+                { note: 'E4', duration: 0.25 },
+                { note: 'G4', duration: 0.25 },
+                { note: 'A4', duration: 0.25 },
+                { note: 'B4', duration: 0.25 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'D4', duration: 1 },
+                
+                // サビ2
+                { note: 'E4', duration: 0.25 },
+                { note: 'G4', duration: 0.25 },
+                { note: 'A4', duration: 0.25 },
+                { note: 'B4', duration: 0.25 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'B4', duration: 1 },
+                
+                // ラスサビ
+                { note: 'B4', duration: 0.5 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 1 },
+                { note: 'A4', duration: 0.5 },
+                { note: 'G4', duration: 0.5 },
+                { note: 'E4', duration: 1 },
+                { note: 'D4', duration: 0.5 },
+                { note: 'E4', duration: 0.5 },
+                { note: 'G4', duration: 1 }
+            ]
+        };
+
+        // 自動演奏機能
+        async function playSong(songNotes) {
+            const playButton = document.getElementById('playButton');
+            playButton.disabled = true;
+            
+            for (const note of songNotes) {
+                // 対応する鍵盤を光らせる
+                const key = document.querySelector(`[data-note="${note.note}"]`);
+                key.classList.add('active');
+                
+                // 音を鳴らす
+                playNote(noteFrequencies[note.note], note.duration);
+                
+                // 指定した時間待つ
+                await new Promise(resolve => setTimeout(resolve, note.duration * 1000));
+                
+                // 鍵盤の色を戻す
+                key.classList.remove('active');
+            }
+            
+            playButton.disabled = false;
+        }
+
+        // 自動演奏ボタンのイベントリスナー
+        document.getElementById('playButton').addEventListener('click', function() {
+            const selectedSong = document.getElementById('songSelect').value;
+            if (selectedSong && songs[selectedSong]) {
+                playSong(songs[selectedSong]);
+            } else {
+                alert('曲を選択してください');
+            }
+        });
+    </script>
+</body>
+</html> 
